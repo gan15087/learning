@@ -1,0 +1,531 @@
+# -*- coding: utf-8 -*-
+"""生成《每周学习材料-38周.md》，并把「周材料」工作表写入进度追踪表。
+
+数据是唯一来源：改 WEEKS 后重跑本脚本即可同时更新 md 与 xlsx。
+"""
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+MD_OUT = "每周学习材料-38周.md"
+XLSX = "学习计划-进度追踪表.xlsx"
+
+# (周, 日期, 标题, 主线一句话, [(日, 主题, [(名, 链接)], 产出)], 周末实战, 检索兜底)
+WEEKS = [
+    (1, "10/19–10/25", "工程化地基：uv / Pydantic / 流式调用",
+     "把写脚本的习惯升级成写工程的习惯，跑通第一次带超时和重试的流式调用。",
+     [("周一", "uv 与 pyproject：现代 Python 项目结构", [("uv 文档", "https://docs.astral.sh/uv/")], "`uv run python -V` 能跑，依赖写进 pyproject"),
+      ("周二", "类型注解与 Pydantic v2 模型校验", [("Pydantic 文档", "https://docs.pydantic.dev/latest/")], "给 Message / Request 定义模型，非法输入能报错"),
+      ("周三", "httpx 同步与异步请求、超时配置", [("httpx 文档", "https://www.python-httpx.org/async/")], "异步发一次请求并打印耗时"),
+      ("周四", "调通 LLM API，理解 messages 与计费", [("DeepSeek API 文档", "https://api-docs.deepseek.com/")], "拿到 key，跑通一次非流式调用并读到 usage"),
+      ("周五", "流式输出（SSE）与首 token 延迟", [("httpx 流式读取", "https://www.python-httpx.org/advanced/")], "逐块打印，记录 first-token 时间")],
+     "把 5 天碎片拼成一个 CLI：`ask \"问题\" --stream --debug`，--debug 打印 token 用量与耗时。",
+     "uv pyproject 入门；httpx 流式 SSE"),
+
+    (2, "10/26–11/01", "FastAPI + pytest + Docker",
+     "做出一个「可测试、可部署」的服务，这是后面所有项目的底座。",
+     [("周一", "FastAPI 第一个接口、自动文档", [("FastAPI 教程", "https://fastapi.tiangolo.com/tutorial/")], "`/health` 与 `/chat` 两个路由可用"),
+      ("周二", "请求体/响应模型与错误处理", [("FastAPI 请求体", "https://fastapi.tiangolo.com/tutorial/body/")], "参数校验失败返回 422 且信息可读"),
+      ("周三", "依赖注入：把 LLM 客户端做成可替换依赖", [("依赖注入", "https://fastapi.tiangolo.com/tutorial/dependencies/")], "测试时能注入假客户端"),
+      ("周四", "pytest：fixture、参数化、monkeypatch 打桩", [("pytest 文档", "https://docs.pytest.org/"), ("monkeypatch", "https://docs.pytest.org/en/stable/how-to/monkeypatch.html")], "8 条用例，含 1 条超时与 1 条异常路径"),
+      ("周五", "TestClient 写接口测试", [("FastAPI 测试", "https://fastapi.tiangolo.com/tutorial/testing/")], "测试覆盖 200 / 422 / 500 三条路径")],
+     "写 Dockerfile，`docker build` + `docker run`，curl 能拿到流式响应；README 写清 3 条命令。",
+     "fastapi pytest TestClient；docker python 镜像 slim"),
+
+    (3, "11/02–11/08", "RAG 第一步：解析与切分",
+     "先解决「读不进来」的问题，切分策略决定后面检索的上限。",
+     [("周一", "文档解析：PDF 表格、扫描件、Markdown", [("Unstructured", "https://docs.unstructured.io/"), ("MinerU", "https://github.com/opendatalab/MinerU")], "50 份 PDF 能转成结构化文本，表格不塌"),
+      ("周二", "切分策略：固定窗口 / 递归 / 语义 / 父子块", [("Chunking 策略", "https://www.pinecone.io/learn/chunking-strategies/")], "同一批文档切出 3 种结果并统计块数"),
+      ("周三", "Embedding 原理与你该关心的维度", [("Sentence Transformers", "https://www.sbert.net/")], "本地跑一个 embedding 模型，算两句话相似度"),
+      ("周四", "向量库：Chroma / FAISS 的取舍", [("Chroma", "https://docs.trychroma.com/"), ("FAISS Wiki", "https://github.com/facebookresearch/faiss/wiki")], "建库、持久化、重启后能查"),
+      ("周五", "引用与溯源：答案里怎么带出处", [("LlamaIndex 文档", "https://docs.llamaindex.ai/")], "回答末尾附 chunk id 与原文片段")],
+     "把解析→切分→向量化→检索串成一条 CLI，对 5 个问题给出带引用的答案。",
+     "pdf 解析 表格 保真；text splitter recursive"),
+
+    (4, "11/09–11/15", "检索评估：先建尺子再调参",
+     "这一周只做一件事：让「检索变好了」变成可比较的数字。",
+     [("周一", "Recall@k / MRR / NDCG 到底在算什么", [("IR 评估指标", "https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)")], "手算 5 条样例的 Recall@3 与 MRR"),
+      ("周二", "用 RAGAs 从文档反向生成问题集", [("RAGAs 测试集生成", "https://docs.ragas.io/en/stable/concepts/test_data_generation/")], "生成 30 条「问题 + 标准答案」"),
+      ("周三", "人工过一遍生成集：去噪、补难度分层", [("RAGAs 数据集概念", "https://docs.ragas.io/en/stable/concepts/datasets/")], "30 条里留下 20 条可用，标注易/中/难"),
+      ("周四", "写检索评测脚本：一个函数换策略就能跑", [("pytest 参数化", "https://docs.pytest.org/en/stable/how-to/parametrize.html")], "`pytest eval_retrieval.py` 输出一张表"),
+      ("周五", "实验设计：控制变量，只改一个参数", [("Chunking 策略", "https://www.pinecone.io/learn/chunking-strategies/")], "3 种 chunk 策略 × 同一批问题的对比表")],
+     "产出「检索评测报告 v1」：指标定义、数据集说明、3 组对比、结论一句话。",
+     "Recall@k 计算；ragas testset generation 中文"),
+
+    (5, "11/16–11/22", "Advanced RAG：改写、混合检索、重排",
+     "三个最有效的提分手段，每个都要用 W4 的尺子量一次。",
+     [("周一", "Query 改写：Multi-Query / HyDE 的适用场景", [("LlamaIndex 文档", "https://docs.llamaindex.ai/")], "同一个问题生成 3 个变体并各自检索"),
+      ("周二", "BM25 与稀疏检索：为什么它能补上向量检索的短板", [("rank_bm25", "https://github.com/dorianbrown/rank_bm25")], "BM25 单跑一次，记录 Recall@5"),
+      ("周三", "混合检索与 RRF 融合", [("RAG from Scratch", "https://github.com/langchain-ai/rag-from-scratch")], "向量 + BM25 融合后 Recall@5 提升"),
+      ("周四", "Rerank：交叉编码器的精度与延迟代价", [("Cohere Rerank", "https://docs.cohere.com/docs/rerank-overview")], "加 rerank 后 top-3 命中率与 P99 延迟"),
+      ("周五", "消融实验：逐个打开，看谁真的有用", [("RAG from Scratch", "https://github.com/langchain-ai/rag-from-scratch")], "一张四行消融表（基线/+改写/+混合/+重排）")],
+     "把 W3 的系统升级到「混合检索 + 重排」，在报告里写清每个改动的边际收益。",
+     "hybrid search RRF；bge-reranker 本地部署"),
+
+    (6, "11/23–11/29", "生成侧评估 + Milvus + 交付",
+     "证明「答案没瞎编」，并把系统做成别人能跑的样子。",
+     [("周一", "Faithfulness / Answer Relevancy 怎么定义", [("RAGAs 指标清单", "https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/")], "能解释每个指标在惩罚什么错误"),
+      ("周二", "跑一次完整 RAGAs 评估", [("RAGAs 快速开始", "https://docs.ragas.io/en/stable/getstarted/quickstart/")], "基线 vs 优化版四指标对比"),
+      ("周三", "Milvus 单机部署与 SDK 增删改查", [("Milvus 文档", "https://milvus.io/docs")], "Docker 起 Milvus，写入 1 万条并检索"),
+      ("周四", "Docker 打包：镜像瘦身与启动自检", [("Docker 文档", "https://docs.docker.com/")], "镜像 < 1GB，启动时打印向量库连接状态"),
+      ("周五", "写评估报告与 README（含限制说明）", [("Make a README", "https://www.makeareadme.com/")], "别人 3 条命令能跑起来")],
+     "里程碑 M1：打 tag v0.1，README 里放指标表；把仓库链接发给自己一个「三个月后还看得懂吗」的检验。",
+     "ragas faithfulness 中文；milvus docker standalone"),
+
+    (7, "11/30–12/06", "手写 Agent Loop：不用框架",
+     "150 行写完你才真正懂 Agent；框架只是脚手架。",
+     [("周一", "Agent 与 Workflow 的边界：什么场景不该用 Agent", [("Building effective agents", "https://www.anthropic.com/engineering/building-effective-agents")], "写出 3 个「不该用 Agent」的反例"),
+      ("周二", "ReAct：Reason + Act 的原始论文", [("ReAct 论文", "https://arxiv.org/abs/2210.03629")], "画出 think→act→observe 循环图"),
+      ("周三", "Agent 的系统视角：规划、记忆、工具", [("Lilian Weng: LLM Powered Agents", "https://lilianweng.github.io/posts/2023-06-23-agent/")], "把博客里的组件映射到你自己的代码结构"),
+      ("周四", "写 loop：消息累积、停止条件、最大步数", [("OpenAI Function Calling", "https://platform.openai.com/docs/guides/function-calling")], "3 个工具能跑通一次两轮调用"),
+      ("周五", "工具注册表：dispatch 表代替 if-elif", [("Pydantic 文档", "https://docs.pydantic.dev/latest/")], "加一个工具只需改一行注册代码")],
+     "mini-agent 完成：calculator / search / read_file 三工具 + 完整轨迹打印（每步的 input、tool、output、耗时）。",
+     "react agent 最小实现 python；tool registry dispatch"),
+
+    (8, "12/07–12/13", "工具调用工程化：schema、失败、降级",
+     "工具是 Agent 的手，手抖不抖决定成功率。",
+     [("周一", "工具 schema 设计：描述、枚举、必填项", [("Function Calling 指南", "https://platform.openai.com/docs/guides/function-calling")], "给同一个工具写两版描述，对比选中率"),
+      ("周二", "结构化输出与解析失败的处理", [("OpenAI 结构化输出", "https://platform.openai.com/docs/guides/structured-outputs")], "解析失败时不崩，转成一次重试"),
+      ("周三", "重试策略：指数退避、幂等、最大次数", [("tenacity 文档", "https://tenacity.readthedocs.io/")], "注入 30% 失败率，成功率从 70% 提升到 99%"),
+      ("周四", "降级路径：工具挂了 Agent 该说什么", [("Building effective agents", "https://www.anthropic.com/engineering/building-effective-agents")], "写清 3 种降级策略及触发条件"),
+      ("周五", "做失败率实验并记录数据", [("pytest 参数化", "https://docs.pytest.org/en/stable/how-to/parametrize.html")], "三种策略对比表：成功率 / 平均步数 / 成本")],
+     "给 mini-agent 加「工具失败注入开关」，跑一遍对照实验，结论写进 README。",
+     "tenacity retry 指数退避；工具 描述 提升 准确率"),
+
+    (9, "12/14–12/20", "MCP：把工具做成标准件",
+     "MCP 是工具生态的事实标准，会写 Server 就有可复用的资产。",
+     [("周一", "MCP 是什么、解决谁的痛", [("MCP 官网", "https://modelcontextprotocol.io/")], "用 USB-C 的类比讲清 client / server / host"),
+      ("周二", "架构：传输层、能力协商、资源与提示", [("MCP 架构", "https://modelcontextprotocol.io/docs/learn/architecture")], "画出一次工具调用的时序"),
+      ("周三", "写第一个 Server：暴露你的本地文档检索", [("构建 MCP Server", "https://modelcontextprotocol.io/docs/develop/build-server"), ("Python SDK", "https://github.com/modelcontextprotocol/python-sdk")], "Client 能列出并调用你的工具"),
+      ("周四", "工具契约测试：输入输出、错误码、超时", [("MCP 调试", "https://modelcontextprotocol.io/docs/tools/debugging")], "5 条契约用例，含非法参数"),
+      ("周五", "接进一个真实客户端并截图", [("MCP 示例 Servers", "https://modelcontextprotocol.io/examples")], "客户端里能自然语言触发你的 Server")],
+     "把 W3 的文档检索封装成 MCP Server，写 README + 3 条使用示例。",
+     "mcp python sdk server 快速上手；mcp inspector"),
+
+    (10, "12/21–12/27", "记忆与上下文工程",
+     "Agent 的核心不是提示词，是「什么信息在什么时刻进入模型」。",
+     [("周一", "上下文工程 vs 提示词工程", [("Anthropic: Context Engineering", "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents")], "列出你的 Agent 里 4 类上下文各自该放什么"),
+      ("周二", "分层设计：system / 长期 / 会话 / 单轮", [("LangGraph Memory", "https://docs.langchain.com/oss/python/langgraph/add-memory")], "画出你的分层图并标注失效策略"),
+      ("周三", "长期记忆：抽取、去重、召回", [("Mem0", "https://github.com/mem0ai/mem0")], "跨会话记住「用户偏好中文 + 不用表格」"),
+      ("周四", "压缩：摘要、裁剪、按需检索三种手段", [("Anthropic: Context Engineering", "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents")], "长对话跑到 20 轮不炸上下文"),
+      ("周五", "量一下压缩到底省了多少", [("Langfuse 成本追踪", "https://langfuse.com/docs")], "压缩前后 token 数与任务成功率对比")],
+     "给研究助手加记忆：第 2 天再问同一个项目，它记得上次的结论。附 token 曲线。",
+     "context engineering 压缩策略；mem0 原理"),
+
+    (11, "12/28–01/03", "编排、中断与读一个真实 Harness",
+     "把「能跑一次」变成「能停能续、能被人接管」。",
+     [("周一", "LangGraph 核心：状态、节点、边", [("LangGraph 概览", "https://docs.langchain.com/oss/python/langgraph/overview")], "一个 3 节点的图跑通"),
+      ("周二", "持久化与检查点：崩溃后能续跑", [("Persistence", "https://docs.langchain.com/oss/python/langgraph/persistence")], "杀掉进程再恢复，状态不丢"),
+      ("周三", "中断与人工确认：高风险动作前停下", [("Interrupts", "https://docs.langchain.com/oss/python/langgraph/interrupts")], "写文件前要求人工确认"),
+      ("周四", "读 learn-claude-code：找 loop、tool、权限、压缩", [("learn-claude-code", "https://github.com/shareAI-lab/learn-claude-code")], "一页笔记：4 个机制分别在哪一行"),
+      ("周五", "对比你的实现与它的差距", [("Claude Code 仓库", "https://github.com/anthropics/claude-code")], "列 5 条「我该补的」并排序")],
+     "里程碑 M2：research-agent 交付（RAG + 搜索 + 引用 + trace），并把 Harness 拆解笔记发出来。",
+     "langgraph interrupt 人工确认；claude code 架构 分析"),
+
+    (12, "01/04–01/10", "性能：剖析、缓存、异步",
+     "先量再改。没有 profile 的优化都是猜。",
+     [("周一", "用 py-spy / cProfile 找热点", [("py-spy", "https://github.com/benfred/py-spy")], "火焰图截图 + 3 个热点函数"),
+      ("周二", "Redis 缓存 LLM 响应：键设计与命中率", [("redis-py", "https://redis.readthedocs.io/")], "重复问题命中率 > 40%"),
+      ("周三", "缓存 Embedding 与检索结果", [("Langfuse 文档", "https://langfuse.com/docs")], "首字节延迟下降并记录"),
+      ("周四", "异步化：把串行工具调用改成并发", [("FastAPI 并发", "https://fastapi.tiangolo.com/async/")], "3 个工具并发，P99 下降 50%"),
+      ("周五", "用 locust 压测，出基线数字", [("Locust", "https://docs.locust.io/")], "QPS / P50 / P99 三张图")],
+     "输出「性能优化报告」：基线 → 改动 → 结果，每项改动都要有独立数字。",
+     "llm 缓存 key 设计；asyncio gather 并发"),
+
+    (13, "01/11–01/17", "成本与推理加速",
+     "面试里「成本降 60%」比「用了 vLLM」值钱得多。",
+     [("周一", "算清一次请求的成本模型（输入/输出/缓存）", [("LiteLLM 成本追踪", "https://docs.litellm.ai/")], "一张成本拆解表，精确到分"),
+      ("周二", "模型路由：什么任务该用便宜模型", [("LiteLLM 路由", "https://docs.litellm.ai/docs/routing")], "分流后成本下降且成功率不掉"),
+      ("周三", "批处理：embedding / rerank 的吞吐优化", [("vLLM 文档", "https://docs.vllm.ai/")], "批大小 vs 吞吐曲线"),
+      ("周四", "vLLM 部署开源小模型", [("vLLM 快速开始", "https://docs.vllm.ai/en/latest/getting_started/quickstart.html")], "本地起 OpenAI 兼容接口并压一次"),
+      ("周五", "写成本报告：降本手段与副作用", [("LiteLLM 文档", "https://docs.litellm.ai/")], "单请求成本 X→Y，质量对比")],
+     "把模型路由 + 缓存 + 批处理组合上线，出一份「降本 50% 现象与代价」的说明。",
+     "vllm openai 兼容 部署；llm 成本 优化"),
+
+    (14, "01/18–01/24", "可观测：trace 与指标",
+     "线上出问题，没有 trace 就只能猜。",
+     [("周一", "Trace 与 Span：Agent 的调用链长什么样", [("OpenTelemetry Python", "https://opentelemetry.io/docs/languages/python/")], "一次请求打出 6 个 span 的树"),
+      ("周二", "Langfuse 接入：每条 trace 可回看", [("Langfuse 文档", "https://langfuse.com/docs")], "能看到每步的 token 与耗时"),
+      ("周三", "自定义指标：工具失败率、缓存命中率", [("Prometheus Client", "https://github.com/prometheus/client_python")], "3 个业务指标暴露到 /metrics"),
+      ("周四", "Grafana 大盘：4 个必须有的图", [("Grafana 文档", "https://grafana.com/docs/")], "大盘截图写进 README"),
+      ("周五", "告警规则：什么情况算异常", [("Prometheus 告警", "https://prometheus.io/docs/practices/alerting/")], "2 条告警规则 + 触发验证")],
+     "把 trace 和指标接进研究助手，故意制造一次超时，用 trace 定位到具体一步。",
+     "langfuse 自建 docker；prometheus fastapi 指标"),
+
+    (15, "01/25–01/31", "部署、CI 与故障演练",
+     "这一周把你测试开发的看家本领用上：主动搞坏它。",
+     [("周一", "Docker Compose 编排全栈 + 健康检查", [("Compose 文档", "https://docs.docker.com/compose/")], "`compose up` 一条命令起 4 个服务"),
+      ("周二", "GitHub Actions：PR 上自动跑 pytest", [("Actions + Python", "https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python")], "PR 红灯能拦住合并"),
+      ("周三", "CI 里跑评测：通过率低于阈值就失败", [("Actions 缓存", "https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows")], "eval 任务 5 分钟内跑完"),
+      ("周四", "故障注入清单：杀掉 Milvus / 限流 / 超时 / 脏数据", [("Chaos 工程实践", "https://principlesofchaos.org/")], "4 个故障各有预期行为"),
+      ("周五", "演练并写报告：现象、定位、修复", [("SRE 手册：Postmortem", "https://sre.google/sre-book/postmortem-culture/")], "一份能直接贴进简历的故障报告")],
+     "里程碑 M3：一键部署 + 压测报告 + 故障演练报告，三件套齐。",
+     "docker compose healthcheck depends_on；github actions 缓存"),
+
+    (16, "02/01–02/07", "弹性周：补债与复盘",
+     "春节不排新内容。这一周的产出是「知道自己到哪了」。",
+     [("周一", "补最欠的那一件交付", [], "把某个半成品补到「能跑」"),
+      ("周二", "回看 4 个仓库的 README，按「别人能跑」标准改", [("Make a README", "https://www.makeareadme.com/")], "每条命令都能复制执行"),
+      ("周三", "读一篇评测或上下文的长文", [("Anthropic Engineering", "https://www.anthropic.com/engineering")], "3 条能用到自己项目里的点"),
+      ("周四", "整理前三阶段的指标数字成一张总表", [], "QPS / P99 / 成本 / 成功率 四个数有出处"),
+      ("周五", "发一篇阶段复盘（哪怕只有 800 字）", [], "公开链接 + 自评 1-5 分")],
+     "复盘笔记：前半程最大的 3 个坑、后半程要砍的一件事。没欠账就把 W17 的评测集提前做。",
+     "agent 项目 复盘 blog 结构"),
+
+    (17, "02/08–02/14", "评测体系（上）：三层与判分",
+     "这是你整条路线里投资回报最高的一段，认真做。",
+     [("周一", "评测框架长什么样：dataset / solver / scorer", [("Inspect AI", "https://inspect.aisi.org.uk/")], "跑通官方 hello world，看懂日志查看器"),
+      ("周二", "LLM-as-judge 的偏差：位置、长度、自偏好", [("Judging LLM-as-a-Judge", "https://arxiv.org/abs/2306.05685")], "列出 3 类偏差及你的规避手段"),
+      ("周三", "任务级评测：τ-bench 怎么定义「任务完成」", [("τ-bench", "https://arxiv.org/abs/2406.12045")], "把「完成」写成可判定的规则"),
+      ("周四", "建 50 条任务集：难度分层 + 期望结果", [("Inspect 数据集", "https://inspect.aisi.org.uk/datasets.html")], "50 条覆盖 5 类任务，标注判定方式"),
+      ("周五", "rubric 设计：把主观判断写成 4 档", [("RAGAs rubric 评分", "https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/general_purpose/")], "同一答案两人打分差异 ≤1 档")],
+     "产出「评测集 v1 + 评分规范」：50 条任务、5 类、4 档 rubric，附 30 条人工标注用于校准 judge。",
+     "llm as judge 一致性 kappa；agent benchmark 设计"),
+
+    (18, "02/15–02/21", "评测体系（下）：Harness 与回归",
+     "把它做成产品，这是你简历里最硬的一块。",
+     [("周一", "promptfoo：YAML 写用例、断言式评测", [("promptfoo 文档", "https://www.promptfoo.dev/docs/intro/")], "5 条 YAML 用例跑出通过率"),
+      ("周二", "DeepEval：pytest 风格的断言", [("DeepEval", "https://deepeval.com/docs/getting-started")], "把评测写成 pytest 用例"),
+      ("周三", "并发跑批、重试、结果落库", [("Inspect 并行执行", "https://inspect.aisi.org.uk/parallelism.html")], "100 条任务 3 分钟内跑完"),
+      ("周四", "失败自动分类：6 类归因规则", [("Inspect 分析", "https://inspect.aisi.org.uk/analysis.html")], "80% 的失败能被自动打上标签"),
+      ("周五", "稳定性：同一集跑 3 次看方差", [("Inspect 日志", "https://inspect.aisi.org.uk/eval-logs.html")], "报告方差，区分「真提升」与「随机波动」")],
+     "里程碑 M4：`agent-eval-harness` v0.1 上 GitHub，一条命令输出通过率/步数/成本/延迟/失败分布。",
+     "promptfoo 断言；agent eval 失败归因"),
+
+    (19, "02/22–02/28", "Multi-Agent：什么时候值得",
+     "多 Agent 不是「角色越多越强」，是任务分解与上下文隔离。",
+     [("周一", "Anthropic 的多 Agent 研究系统：收益与代价", [("Multi-agent research system", "https://www.anthropic.com/engineering/multi-agent-research-system")], "列出 3 个它踩过的坑"),
+      ("周二", "AutoGen：对话式协作的抽象", [("AutoGen", "https://microsoft.github.io/autogen/")], "跑通 GroupChat 官方示例"),
+      ("周三", "CrewAI：角色 + 任务 + 流程", [("CrewAI", "https://docs.crewai.com/")], "跑通一个 3 角色的顺序流程"),
+      ("周四", "判断标准：什么时候单 Agent 更好", [("Building effective agents", "https://www.anthropic.com/engineering/building-effective-agents")], "写出你的「不用多 Agent」判据 4 条"),
+      ("周五", "planner → executor → reviewer 最小实现", [("LangGraph 子图", "https://docs.langchain.com/oss/python/langgraph/use-subgraphs")], "三个角色的输入输出 schema 定死")],
+     "一个小系统 + 一页决策笔记：什么条件下我会用多 Agent，什么条件下坚决不用。",
+     "multi agent 上下文隔离；crewai vs autogen 对比"),
+
+    (20, "03/01–03/07", "项目 1（上）：先写用例再写代码",
+     "先定义「什么叫做完了」，再动手。这是你的职业习惯，别丢。",
+     [("周一", "选场景：一个角色、一个高频任务、一个成功标准", [("Building effective agents", "https://www.anthropic.com/engineering/building-effective-agents")], "一句话说清「谁的什么任务，从几小时到几分钟」"),
+      ("周二", "写 20 条验收用例（此时还没有代码）", [("Inspect 任务定义", "https://inspect.aisi.org.uk/tasks.html")], "20 条用例可执行、可判定"),
+      ("周三", "架构：loop、工具集、上下文分层、权限", [("上下文工程", "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents")], "一张架构图，标清失败点"),
+      ("周四", "工具集设计：5 个工具，每个都有失败路径", [("MCP Server 构建", "https://modelcontextprotocol.io/docs/develop/build-server")], "每个工具写 2 条失败用例"),
+      ("周五", "搭骨架：接口、配置、日志、成本上限", [("FastAPI 文档", "https://fastapi.tiangolo.com/")], "空实现能跑通一条完整链路")],
+     "交付「设计文档 + 20 条用例」，代码只写骨架。用例先红，后面再转绿。",
+     "agent 项目 需求 文档 模板；验收用例 设计"),
+
+    (21, "03/08–03/14", "项目 1（下）：跑通、评测、部署",
+     "把 20 条用例一条条变绿，然后把过程写成数字。",
+     [("周一", "实现核心链路，先让 5 条用例通过", [], "通过率 25%，记录失败原因"),
+      ("周二", "补工具重试与降级，冲 15 条", [("tenacity", "https://tenacity.readthedocs.io/")], "通过率 75%，失败分类有 3 类"),
+      ("周三", "上下文压缩 + 提示调整，冲 18 条", [], "通过率 90%，成本变化记录"),
+      ("周四", "接 trace 与监控，能定位每一次失败", [("Langfuse", "https://langfuse.com/docs")], "随机抽 3 条失败能追到根因"),
+      ("周五", "部署 + README + 指标表", [("Make a README", "https://www.makeareadme.com/")], "一条命令起服务，指标表四项俱全")],
+     "项目 1 收口：成功率 82%→91% 这类曲线要真实存在，别编数字——面试官会追问细节。",
+     "agent 项目 README 指标；上下文压缩 实践"),
+
+    (22, "03/15–03/21", "项目 2：把评测平台做成产品",
+     "让不懂命令行的人也能跑一次回归。",
+     [("周一", "界面选型：Gradio 最快，Streamlit 更好看", [("Gradio", "https://www.gradio.app/"), ("Streamlit", "https://streamlit.io/")], "能上传 YAML 并看到结果表"),
+      ("周二", "回放：逐步查看 messages / 工具 / 耗时", [("Inspect 日志查看器", "https://inspect.aisi.org.uk/log-viewer.html")], "点开一条 case 能看完整轨迹"),
+      ("周三", "版本对比：两次运行的 diff 视图", [], "通过率/成本/延迟三列 diff 上色"),
+      ("周四", "失败归因看板与导出 markdown 报告", [], "一键导出，能贴进 PR"),
+      ("周五", "演示视频录制（3 分钟）", [], "讲清「问题-方案-效果」")],
+     "里程碑 M5：两个仓库 + 两个 3 分钟视频 + 一篇技术文章。",
+     "gradio 文件上传；eval 结果 diff 对比"),
+
+    (23, "03/22–03/28", "简历与项目陈述",
+     "同一件事，会讲的人拿到面试。",
+     [("周一", "按「架构-业务-结果」三维重写项目经历", [("Tech Resume Guide", "https://www.techinterviewhandbook.org/resume/")], "两个项目各 4 行，每行带数字"),
+      ("周二", "写 3 分钟版讲稿并录音回听", [], "不看稿能讲完，卡壳点标出来"),
+      ("周三", "写 10 分钟版（含架构图与失败案例）", [], "能回答「为什么不用 X」"),
+      ("周四", "系统设计 8 题：Agent 客服 / 代码 Agent / 研究 Agent", [("AgentGuide 路线", "https://github.com/adongwanai/AgentGuide")], "每题画出数据流与兜底"),
+      ("周五", "找人 mock 一次，收集 3 个尖锐问题", [], "把答不上的题记下来补")],
+     "简历 v3 定稿，投递名单列 20 家（含内推渠道）。",
+     "agent 简历 项目 描述；系统设计 面试 agent"),
+
+    (24, "03/29–04/04", "模拟面试与开投",
+     "第一批投递的唯一目的是拿反馈，不是拿 offer。",
+     [("周一", "高频题过一遍：边界、工具、上下文、循环、评测", [("AgentGuide 面经", "https://adongwanai.github.io/AgentGuide/interview/")], "10 题各写 3 句答案"),
+      ("周二", "RAG 专项：切分、混合、重排、评估", [("RAGAs 指标", "https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/")], "能解释每个指标的失效场景"),
+      ("周三", "把「我会怎么测它」这句话练成肌肉记忆", [], "每题都能接一句测试方案"),
+      ("周四", "mock 第二场，全程录像", [], "回看并列出 5 个改进点"),
+      ("周五", "投出第一批 5-8 家，建投递表", [("投递跟踪模板", "https://www.techinterviewhandbook.org/")], "岗位/进度/反馈三列")],
+     "开始投递。被拒也要记录原因，这是最便宜的市场调研。",
+     "agent 面试 高频题；大模型 评测 面试"),
+
+    (25, "04/05–04/11", "具身入门：PyTorch 与全景",
+     "先能训一个模型，再谈机器人。",
+     [("周一", "PyTorch 60 分钟闪电战：张量、autograd", [("PyTorch 教程", "https://pytorch.org/tutorials/beginner/deep_learning_60min_blitz.html")], "手写一个线性回归训练循环"),
+      ("周二", "训练循环的标准写法：dataset / loss / optimizer", [("PyTorch 基础", "https://pytorch.org/tutorials/beginner/basics/intro.html")], "训练 MNIST 到 98%"),
+      ("周三", "VLA 是什么：把「看-想-动」串起来", [("awesome-vla-study", "https://github.com/MilkClouds/awesome-vla-study")], "画出 VLA 的输入输出"),
+      ("周四", "具身全景：感知、规划、控制、数据", [("Foundation of Embodied AI", "https://github.com/zengxiong111/Foundation_of_Embodied_AI")], "一页笔记：具身与 LLM Agent 的 3 个本质差异"),
+      ("周五", "把 VLA 类比成「有身体的多模态 Agent」讲给外行", [], "3 分钟口述，不查资料")],
+     "一个 MLP 训练脚本 + 一页 VLA 类比笔记（能讲清为什么动作不是文本）。",
+     "VLA 模型 综述；具身智能 技术栈 全景"),
+
+    (26, "04/12–04/18", "机器人学最小集与 ROS 2",
+     "不用学完整机器人学，但坐标系和逆解必须懂。",
+     [("周一", "坐标系、齐次变换、旋转矩阵", [("Foundation of Embodied AI", "https://github.com/zengxiong111/Foundation_of_Embodied_AI")], "手推一次 2D 变换并验算"),
+      ("周二", "正运动学与逆运动学（2 连杆起步）", [("Modern Robotics 概念", "https://github.com/zengxiong111/Foundation_of_Embodied_AI")], "用 numpy 算 2 连杆逆解"),
+      ("周三", "ROS 2 架构：节点、话题、服务、动作", [("ROS 2 教程", "https://docs.ros.org/en/jazzy/Tutorials.html")], "跑通 talker/listener"),
+      ("周四", "rclpy 写一个自己的节点", [("rclpy 教程", "https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html")], "节点能发布关节角"),
+      ("周五", "URDF：机器人描述文件长什么样", [("URDF 教程", "https://docs.ros.org/en/jazzy/Tutorials/Intermediate/URDF/URDF-Main.html")], "改一个 URDF 并在 RViz 里看到")],
+     "2 连杆逆解脚本 + 一个 ROS 2 节点，合并成一个能「收到目标点就输出关节角」的小服务。",
+     "ROS2 rclpy 节点 教程；逆运动学 2连杆"),
+
+    (27, "04/19–04/25", "仿真：MuJoCo 与 Gymnasium",
+     "笔记本能跑的仿真，是具身最低成本的练习场。",
+     [("周一", "MuJoCo 基础：模型、关节、执行器、渲染", [("MuJoCo 文档", "https://mujoco.readthedocs.io/en/stable/")], "加载一个机械臂模型并渲染"),
+      ("周二", "Gymnasium 接口：reset / step / reward / done", [("Gymnasium", "https://gymnasium.farama.org/")], "写一个自定义环境壳"),
+      ("周三", "搭 reach 任务：目标点、距离奖励、成功判定", [("Gymnasium 自定义环境", "https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/")], "随机策略成功率接近 0"),
+      ("周四", "奖励整形：稀疏 vs 稠密", [], "两种奖励的曲线对比"),
+      ("周五", "把环境接上随机策略基线并记录", [], "基线数字：成功率、平均步数")],
+     "一个能跑 1000 步不崩的 reach 环境 + 基线曲线（此时大概率成功率为 0，很正常）。",
+     "mujoco 机械臂 环境；gymnasium 自定义 env"),
+
+    (28, "04/26–05/02", "强化学习：把 reach 训出来",
+     "不追求懂全部 RL，只追求能把一个任务训到 80%。",
+     [("周一", "PPO 的直觉：策略、优势、裁剪", [("PPO 论文", "https://arxiv.org/abs/1707.06347")], "画出 PPO 的更新流程"),
+      ("周二", "Spinning Up：RL 术语速查", [("Spinning Up", "https://spinningup.openai.com/")], "搞清 on-policy / off-policy 的差别"),
+      ("周三", "stable-baselines3 接入：三行启动训练", [("SB3 文档", "https://stable-baselines3.readthedocs.io/")], "PPO 能跑起来并保存模型"),
+      ("周四", "调参：学习率、并行环境数、训练步数", [("SB3 调参建议", "https://stable-baselines3.readthedocs.io/en/master/guide/rl_tips.html")], "找到能收敛的一组参数"),
+      ("周五", "评估与录像：成功率、方差、失败模式", [], "成功率 >80% + 一段回放视频")],
+     "reach 成功率从 0 到 80%+，附训练曲线与 3 条失败案例分析。",
+     "PPO 调参 经验；stable baselines3 并行环境"),
+
+    (29, "05/03–05/09", "模仿学习：比 RL 更适合入门",
+     "真机上强化学习太贵，模仿学习才是主流起点。",
+     [("周一", "行为克隆：把策略学成监督学习", [("ACT 论文", "https://arxiv.org/abs/2304.13705")], "讲清 BC 的复合误差问题"),
+      ("周二", "Diffusion Policy：为什么动作要生成而不是回归", [("Diffusion Policy", "https://arxiv.org/abs/2303.04137")], "画出扩散去噪的动作生成过程"),
+      ("周三", "LeRobot：数据集格式与训练流程", [("LeRobot", "https://github.com/huggingface/lerobot")], "能加载一个公开数据集并看字段"),
+      ("周四", "训一个抓取 policy", [("LeRobot 文档", "https://huggingface.co/docs/lerobot")], "loss 下降、能出预测动作"),
+      ("周五", "仿真实测 + 录像", [], "成功率与失败模式记录")],
+     "一个能跑的抓取 policy + 回放视频；写下「BC 在你这个任务上失效的 3 个原因」。",
+     "行为克隆 ACT；diffusion policy 原理"),
+
+    (30, "05/10–05/16", "SO-101 与遥操作（或仿真等价物）",
+     "没有硬件也能做，但真机的「脏数据」是仿真给不了的。",
+     [("周一", "SO-101 硬件：舵机、总线、组装要点", [("LeRobot 文档（SO-101 章节）", "https://huggingface.co/docs/lerobot")], "列出配件清单与预算"),
+      ("周二", "标定：相机内外参、关节零点", [("LeRobot 文档", "https://huggingface.co/docs/lerobot")], "标定误差可复现"),
+      ("周三", "遥操作采数：50 条示教的规范", [], "数据字段完整、时间戳对齐"),
+      ("周四", "训练：小数据下的过拟合观察", [], "训练/验证 loss 曲线"),
+      ("周五", "实机回放，记录失败案例", [], "3 个失败模式：光照、遮挡、抓空")],
+     "50 条示教 + 一个能实机跑通的 policy；无硬件则做仿真等价物并说明差异。",
+     "SO-101 组装 教程；lerobot 遥操作 采数"),
+
+    (31, "05/17–05/23", "VLA 精读（一）：RT-2 与 OpenVLA",
+     "读论文只回答四个问题：输入、输出、数据、评测。",
+     [("周一", "RT-2：把动作当成 token 来生成", [("RT-2 论文", "https://arxiv.org/abs/2307.15818")], "画清 action token 化的流程"),
+      ("周二", "OpenVLA：开源复现的关键取舍", [("OpenVLA 论文", "https://arxiv.org/abs/2406.09246"), ("项目页", "https://openvla.github.io/")], "列出它与 RT-2 的 3 个差异"),
+      ("周三", "动作表示：离散 token vs 连续回归", [], "一页对比表"),
+      ("周四", "数据规模与泛化：论文里的「涌现」可信吗", [], "写下 2 个你怀疑的实验设置"),
+      ("周五", "整理成可讲的 5 分钟版本", [], "不看论文能讲清架构")],
+     "论文笔记：输入输出、动作表示、训练数据、评测方式、你怀疑的点。",
+     "OpenVLA 原理；action tokenization"),
+
+    (32, "05/24–05/30", "VLA 精读（二）：π0 与 GR00T",
+     "这一代的关键词是 flow matching 与跨本体。",
+     [("周一", "π0：flow matching 生成动作块", [("π0 论文", "https://arxiv.org/abs/2410.24164")], "讲清 action chunk 与推理频率的关系"),
+      ("周二", "开源实现 openpi 的目录结构", [("openpi", "https://github.com/Physical-Intelligence/openpi")], "找到训练入口与配置项"),
+      ("周三", "GR00T：人形机器人的基础模型路线", [("Isaac-GR00T", "https://github.com/NVIDIA/Isaac-GR00T")], "列出它对数据格式的要求"),
+      ("周四", "flow matching 与 diffusion 的关系", [("Flow Matching 论文", "https://arxiv.org/abs/2210.02747")], "能讲清两者异同"),
+      ("周五", "两代架构对比表", [], "动作表示/推理频率/数据规模/开源程度 四列")],
+     "一张对比表 + 一段「为什么 2025 年后都在用 flow matching」的解释。",
+     "flow matching 动作生成；pi0 架构"),
+
+    (33, "05/31–06/06", "复现：在 LIBERO 上跑 zero-shot",
+     "复现的意义不是跑通，是知道差在哪。",
+     [("周一", "LIBERO 基准：任务集与成功判定", [("LIBERO", "https://github.com/Lifelong-Robot-Learning/LIBERO")], "列出 4 个 suite 的任务数"),
+      ("周二", "环境搭建：依赖、权重、显存估算", [("OpenVLA 仓库", "https://github.com/openvla/openvla")], "能加载权重并推理一次"),
+      ("周三", "跑 10 个任务的 zero-shot", [], "成功率、单步延迟、显存"),
+      ("周四", "与论文数字对比，记录差异", [], "差异归因：分辨率/步数/权重版本"),
+      ("周五", "写复现报告", [], "可复现步骤 + 差异分析")],
+     "复现报告：我的数字 vs 论文数字，差在哪、为什么。这份报告比「跑通了」值钱。",
+     "LIBERO 复现；OpenVLA 显存 要求"),
+
+    (34, "06/07–06/13", "微调：LoRA 与数据量消融",
+     "小数据微调是工程岗最常干的活。",
+     [("周一", "LoRA 原理与秩的选择", [("LoRA 论文", "https://arxiv.org/abs/2106.09685")], "讲清为什么低秩够用"),
+      ("周二", "PEFT 库：给模型套 LoRA", [("PEFT 文档", "https://huggingface.co/docs/peft")], "成功注入并打印可训练参数占比"),
+      ("周三", "微调脚本跑通（小 batch）", [], "loss 正常下降，显存可控"),
+      ("周四", "数据量消融：10 / 50 / 200 条", [], "三条曲线的成功率"),
+      ("周五", "微调前后对比与结论", [], "什么数据量开始不再涨")],
+     "微调报告：基线、微调后、消融曲线，以及「再给我 10 倍数据能涨多少」的估计。",
+     "LoRA 微调 VLA；peft 参数占比"),
+
+    (35, "06/14–06/20", "Isaac Sim / Isaac Lab",
+     "要并行、要大场景，就得换到 GPU 仿真。",
+     [("周一", "Isaac Lab 安装与环境验证", [("Isaac Lab", "https://isaac-sim.github.io/IsaacLab/")], "跑通自带示例"),
+      ("周二", "Isaac Sim 界面：USD 资产、场景、物理", [("Isaac Sim 文档", "https://docs.isaacsim.omniverse.nvidia.com/")], "搭一个带桌子的场景"),
+      ("周三", "把机械臂与相机放进场景", [], "渲染出第一帧"),
+      ("周四", "并行环境与训练脚本", [("Isaac Lab 训练", "https://isaac-sim.github.io/IsaacLab/main/source/overview/reinforcement-learning/rl_existing_scripts.html")], "并行 64 环境跑起来"),
+      ("周五", "跑通一次抓取训练", [], "训练曲线 + 一段回放")],
+     "Isaac Lab 里搭一个抓取场景并跑通训练，记录显存与耗时。",
+     "isaac lab 安装 报错；isaac sim usd 场景"),
+
+    (36, "06/21–06/27", "Sim2Real：把仿真搬到真机",
+     "差距不在模型，在光照、摩擦、延迟和标定。",
+     [("周一", "域随机化：随机什么、随机多少", [("NVIDIA SO-101 Sim2Real", "https://docs.nvidia.com/learning/physical-ai/robotics.html")], "列出 5 个随机化维度"),
+      ("周二", "相机标定与坐标系对齐", [("ROS 2 标定", "https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html")], "手眼标定误差 < 5mm"),
+      ("周三", "延迟与噪声：控制频率、抖动建模", [], "测出端到端延迟"),
+      ("周四", "真机部署：推理频率与安全边界", [], "急停与力矩限制生效"),
+      ("周五", "记录失败：光照、反光、抓空", [], "5 条失败案例与改进假设")],
+     "一段「仿真训练 → 真机执行」的视频，以及一页失败分析。这段视频是面试里最容易被记住的东西。",
+     "sim2real gap 域随机化；手眼标定"),
+
+    (37, "06/28–07/04", "具身评测：把测试思维搬过来",
+     "别人比成功率，你比「这个成功率可信吗」。",
+     [("周一", "评测协议：初始条件、重复次数、判定标准", [("LIBERO", "https://github.com/Lifelong-Robot-Learning/LIBERO")], "写出你的评测协议文档"),
+      ("周二", "CALVIN：长程任务的评测方式", [("CALVIN", "https://github.com/mees/calvin")], "讲清它与 LIBERO 的差别"),
+      ("周三", "同一 policy 在 3 种条件下的成功率", [], "光照/位置/物体 三组对比"),
+      ("周四", "数据质量：示教数据的偏置与覆盖", [], "统计覆盖度与偏置"),
+      ("周五", "可复现性：种子、版本、硬件记录", [], "别人按你的文档能复现 ±3%")],
+     "评测报告：协议、三组条件、方差、结论。这份东西能让你在具身团队里显得不像新手。",
+     "机器人 policy 评测 协议；CALVIN 基准"),
+
+    (38, "07/05–07/11", "收尾：报告、视频、作品集",
+     "把 38 周压缩成别人 3 分钟能看懂的东西。",
+     [("周一", "技术报告结构：问题-方法-实验-结论-限制", [], "大纲先给一个人看，问「看得懂吗」"),
+      ("周二", "补实验：把最弱的那个数字补强", [], "至少一个指标超过基线"),
+      ("周三", "录 3 分钟 demo：问题、演示、数据", [], "不看稿、无废话"),
+      ("周四", "作品集页：两个 Agent 项目 + 一个具身项目", [], "一页能看完，链接可点"),
+      ("周五", "更新简历与自我介绍，投具身岗", [], "简历 v4")],
+     "里程碑 M6：demo 视频 + 技术报告 + 作品集页；把 38 周的仓库整理成 3 个置顶。",
+     "技术报告 结构；具身智能 简历"),
+]
+
+
+def build_md():
+    lines = []
+    lines.append("# 38 周逐周学习材料（10h/周）")
+    lines.append("")
+    lines.append("> 配套：[学习计划-Agent与具身智能-38周.md](学习计划-Agent与具身智能-38周.md)｜[成果验收标准-38周.md](成果验收标准-38周.md)｜[学习计划-进度追踪表.xlsx](学习计划-进度追踪表.xlsx)")
+    lines.append("> 起点 2026-10-19（周一），每周 10 小时 = 工作日 5×1h 输入 + 周末 3h 实战 + 2h 验收。")
+    lines.append("")
+    lines.append("## 怎么用这份材料")
+    lines.append("")
+    lines.append("1. **一天一个单元，一天一个产出**。每个单元后面都写了一句「产出」，写不出来就是没学会。")
+    lines.append("2. **一天只有 1 小时**：前 50 分钟读/写，后 10 分钟写 3 行笔记（做什么、卡在哪、明天接着干什么）。")
+    lines.append("3. **链接可能失效**。每周末尾给了「检索兜底」关键词，直接搜关键词比死磕旧链接快。")
+    lines.append("4. **不要全看**。每个单元给了 1–2 个材料，点开第一个就够；看不完是常态，看完再动手是幻觉。")
+    lines.append("5. **周末别学新东西**。周末只做「把本周碎片拼成能跑的东西」这一件事。")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    for w, dates, title, main, units, weekend, kw in WEEKS:
+        lines.append(f"## W{w}｜{dates}｜{title}")
+        lines.append("")
+        lines.append(f"**主线**：{main}")
+        lines.append("")
+        for day, topic, links, out in units:
+            if links:
+                link_str = "、".join(f"[{n}]({u})" for n, u in links)
+                lines.append(f"- **{day}** {topic} —— {link_str}　→　{out}")
+            else:
+                lines.append(f"- **{day}** {topic}　→　{out}")
+        lines.append(f"- **周末** {weekend}")
+        lines.append(f"- **检索兜底**：`{kw}`")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append("## 附：一次性准备（W1 之前做完）")
+    lines.append("")
+    lines.append("| 项目 | 说明 | 预算 |")
+    lines.append("|:--|:--|:--|")
+    lines.append("| LLM API | DeepSeek / Qwen 任一家，充值 50 元够跑 2 个月 | ¥50 |")
+    lines.append("| 本地模型 | Ollama + 7B 模型，做延迟与成本实验 | ¥0 |")
+    lines.append("| 代码托管 | GitHub 私有仓库 3 个：mini-agent / rag-service / eval-harness | ¥0 |")
+    lines.append("| 环境 | Python 3.11+、uv、Docker Desktop、VS Code | ¥0 |")
+    lines.append("| 阶段 B 追加 | AutoDL 账号（按小时租 GPU）、Isaac 需要 NVIDIA 显卡 | ¥300–800 |")
+    lines.append("")
+    lines.append("> **关于链接有效性**：2026-10-19 抽查了主要入口，其中 LangGraph 文档已迁到 `docs.langchain.com`，MCP 文档改用了新版路径，均已按新地址给出。GitHub 在本机网络无法直连，仓库类链接未逐个打开，但都是各自项目的官方主仓；任何一条失效时，用当周的「检索兜底」关键词重新定位，比翻旧链接快。")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_xlsx():
+    wb = load_workbook(XLSX)
+    if "周材料" in wb.sheetnames:
+        del wb["周材料"]
+    ws = wb.create_sheet("周材料", 2)
+    ws.sheet_view.showGridLines = False
+
+    navy = "1F3A5F"
+    blue = "2E5E8C"
+    grey = "F2F4F7"
+    thin = Side(style="thin", color="D0D7DE")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "逐周学习材料（点链接直接打开；材料名在 B 列，链接在 E 列）"
+    ws["A1"].font = Font(size=14, bold=True, color="FFFFFF")
+    ws["A1"].fill = PatternFill("solid", fgColor=navy)
+    ws["A1"].alignment = Alignment(vertical="center", indent=1)
+    ws.row_dimensions[1].height = 32
+
+    heads = ["周次", "日期", "日", "学什么", "材料", "备用材料", "1 行产出"]
+    widths = [7, 13, 7.5, 40, 32, 32, 40]
+    for i, (h, w) in enumerate(zip(heads, widths), start=1):
+        c = ws.cell(row=3, column=i, value=h)
+        c.font = Font(bold=True, color="FFFFFF", size=10)
+        c.fill = PatternFill("solid", fgColor=blue)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = border
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.row_dimensions[3].height = 26
+
+    row = 4
+    n = 0
+    for w, dates, title, main, units, weekend, kw in WEEKS:
+        for day, topic, links, out in units:
+            vals = [w, dates, day, topic, "", "", out]
+            for j, v in enumerate(vals, start=1):
+                c = ws.cell(row=row, column=j, value=v)
+                c.border = border
+                c.font = Font(size=9)
+                c.alignment = Alignment(vertical="top", wrap_text=j in (2, 4, 5, 6, 7),
+                                        horizontal="center" if j in (1, 3) else "left")
+            if links:
+                for k, (name, url) in enumerate(links[:2]):
+                    cell = ws.cell(row=row, column=5 + k, value=name)
+                    cell.hyperlink = url
+                    cell.font = Font(size=9, color="0563C1", underline="single")
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+                if len(links) == 1:
+                    ws.cell(row=row, column=6, value="—").font = Font(size=9, color="808080")
+            else:
+                c5 = ws.cell(row=row, column=5, value="—（无需材料）")
+                c5.font = Font(size=9, color="808080")
+                c5.alignment = Alignment(vertical="top", wrap_text=True)
+                ws.cell(row=row, column=6, value="—").font = Font(size=9, color="808080")
+            ws.row_dimensions[row].height = 30
+            row += 1
+            n += 1
+        # 周末行
+        weekend_cell = weekend if len(weekend) <= 40 else weekend[:38] + "…"
+        vals = [w, dates, "周末", "实战：" + weekend_cell, "", "", ""]
+        for j, v in enumerate(vals, start=1):
+            c = ws.cell(row=row, column=j, value=v)
+            c.border = border
+            c.font = Font(size=9, bold=(j == 3))
+            c.alignment = Alignment(vertical="top", wrap_text=j in (2, 4),
+                                    horizontal="center" if j in (1, 3) else "left")
+        c5 = ws.cell(row=row, column=5, value=f"检索兜底：{kw}")
+        c5.font = Font(size=8, color="808080")
+        c5.alignment = Alignment(vertical="top", wrap_text=True)
+        ws.row_dimensions[row].height = 40
+        row += 1
+
+    ws.freeze_panes = "A4"
+    ws.auto_filter.ref = f"A3:G{row - 1}"
+    wb.save(XLSX)
+    return n
+
+
+if __name__ == "__main__":
+    md = build_md()
+    with open(MD_OUT, "w", encoding="utf-8") as f:
+        f.write(md)
+    units = write_xlsx()
+    print(f"md lines: {md.count(chr(10))}, xlsx unit rows: {units}")
