@@ -1,9 +1,7 @@
 # IDE
-.idea/
 .vscode/
 
-# Python venv / cache / uv
-uv/
+# Python cache
 venv/
 .venv/
 __pycache__/
@@ -15,9 +13,3 @@ Thumbs.db
 
 # secrets
 .env
-
-# 下载的参考项目，不上传
-flaskDemo-master/
-pytestDemo-master/
-hacker/
-opencv/
