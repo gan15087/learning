@@ -1,0 +1,38 @@
+{
+  "codes": [
+    "sh000001",
+    "sz399001",
+    "sz399006",
+    "sh000688",
+    "sz002506",
+    "sz159516"
+  ],
+  "labels": {
+    "sh000001": "上证",
+    "sz399001": "深证",
+    "sz399006": "创业板",
+    "sh000688": "科创50",
+    "sz002506": "协鑫",
+    "sz159516": "设备ETF"
+  },
+  "refresh_ms": 5000,
+  "opacity": 0.82,
+  "hidden_opacity": 0.1,
+  "geometry": "1054x27+1194+1413",
+  "font": "Microsoft YaHei",
+  "font_size": 10,
+  "always_onmost": true,
+  "topmost_every_ms": 3000,
+  "margin": 24,
+  "layout": "bar",
+  "position": "custom",
+  "taskbar_gap": 3,
+  "bar_align": "center",
+  "opacity_steps": [
+    0.88,
+    0.55,
+    0.25
+  ],
+  "double_click_action": "cycle",
+  "hover_chart": true
+}

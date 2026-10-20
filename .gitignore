@@ -1,0 +1,23 @@
+# IDE
+.idea/
+.vscode/
+
+# Python venv / cache / uv
+uv/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# secrets
+.env
+
+# 下载的参考项目，不上传
+flaskDemo-master/
+pytestDemo-master/
+hacker/
+opencv/
